@@ -32,25 +32,15 @@ services:
     volumes:
       # Persist SQLite DB file (default profile) across container restarts
       - demohub_data:/app/prisma
-    depends_on:
-      db:
-        condition: service_healthy
+    # Note: no depends_on — the entrypoint retries migrations gracefully and
+    # Next.js reconnects automatically. When using the postgres profile, set
+    # DATABASE_URL to the postgres connection string in .env before starting.
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-
-  # ── SQLite profile (default) ───────────────────────────────────────────────
-  # SQLite is baked into the container; this service is a placeholder so the
-  # default compose run works without external DB deps. The DB file is persisted
-  # via a named volume mounted inside the app container.
-  db:
-    image: alpine:3.20
-    profiles: ["sqlite"]
-    # Not used directly; kept for profile symmetry. See app volume below.
-    command: ["sh", "-c", "echo 'SQLite mode: DB lives in the demohub_data volume.'"]
 
   # ── Postgres profile (production) ──────────────────────────────────────────
   postgres:

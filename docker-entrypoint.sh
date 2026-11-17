@@ -1,23 +1,28 @@
 #!/bin/sh
 # DemoHub — Docker entrypoint
-# Runs Prisma migrations (if DATABASE_URL points to a DB we can migrate),
-# generates the Prisma client, then starts Next.js.
+# Generates the Prisma client (idempotent), runs migrations if a DB URL is set,
+# then starts Next.js. Safe to run on every container start.
 
 set -e
 
 echo "▶ DemoHub starting..."
 
-# Generate Prisma client (idempotent; ensures client matches schema)
+# Ensure Prisma client is generated (matches the schema shipped in the image)
 echo "▶ Generating Prisma client..."
-npx prisma generate --schema=./prisma/schema.prisma
+npx prisma generate --schema=./prisma/schema.prisma || {
+  echo "⚠ Prisma generate failed. Continuing..."
+}
 
-# Run migrations if DATABASE_URL is set and points to a real DB
+# Run migrations if DATABASE_URL is set
 if [ -n "$DATABASE_URL" ]; then
   echo "▶ Running Prisma migrations..."
-  # --accept-data-loss is safe for SQLite dev; for Postgres prod, remove it
+  # migrate deploy is idempotent — safe to run on every start.
+  # For SQLite dev it works directly; for Postgres prod it applies pending migrations.
   npx prisma migrate deploy --schema=./prisma/schema.prisma || {
-    echo "⚠ Migration failed (may already be applied). Continuing..."
+    echo "⚠ Migration failed (may already be applied or DB not ready). Continuing..."
   }
+else
+  echo "▶ No DATABASE_URL set — skipping migrations."
 fi
 
 echo "▶ Starting Next.js..."

@@ -9,7 +9,7 @@ WORKDIR /app
 # Copy only manifest files first (better layer caching)
 COPY package.json package-lock.json* ./
 
-# Install all dependencies (including dev for building & Prisma)
+# Install ALL dependencies (prisma CLI is needed for build-time generate + migrate)
 RUN npm ci
 
 # ── Stage 2: Builder ─────────────────────────────────────────────────────────
@@ -21,11 +21,10 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy source
 COPY . .
 
-# Generate Prisma client during build (needed for static generation / type safety)
+# Generate Prisma client during build (needed for build-time types & static gen)
 RUN npx prisma generate
 
-# Build the Next.js app
-# NODE_ENV=production ensures optimized build
+# Build the Next.js app (output: standalone is set in next.config.mjs)
 ENV NODE_ENV=production
 RUN npm run build
 
@@ -37,14 +36,23 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs
 
-# Only install production dependencies in the runner
-COPY --from=deps /app/node_modules ./node_modules
+# Copy the standalone output — this includes a minimal node_modules with only
+# production deps needed to run Next.js (server.js + .next/standalone).
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-# Prisma client (generated in builder) — needed at runtime
+
+# Prisma client generated at build time — the standalone node_modules does NOT
+# include @prisma/client's generated client, so copy it explicitly.
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+
+# Copy the Prisma schema + migrations (needed by entrypoint to run migrate deploy)
 COPY --from=builder /app/prisma ./prisma
+
+# Copy entrypoint script
+COPY --chown=nextjs:nodejs docker-entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Switch to non-root user
 USER nextjs
@@ -58,8 +66,5 @@ ENV HOSTNAME="0.0.0.0"
 ENV NODE_ENV=production
 
 # Entrypoint runs migrations then starts Next.js
-COPY --chown=nextjs:nodejs docker-entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["node", "server.js"]
