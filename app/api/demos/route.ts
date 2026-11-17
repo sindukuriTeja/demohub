@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { generateShareToken } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
         title: body.title,
         description: body.description,
         type: body.type || "interactive",
-        shareToken: Math.random().toString(36).substring(2, 15),
+        shareToken: generateShareToken(),
       },
     });
     return NextResponse.json(demo);

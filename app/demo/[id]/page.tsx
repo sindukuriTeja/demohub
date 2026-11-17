@@ -34,7 +34,7 @@ export default async function DemoEditorPage({
             </span>
           </div>
           <div className="flex gap-3">
-            <Link href={`/play/${demo.shareToken}`} target="_blank" className="btn-secondary">Preview</Link>
+            <Link href={`/s/${demo.shareToken}`} target="_blank" className="btn-secondary">Preview</Link>
             <Link href={`/editor/${demo.id}/settings`} className="btn-secondary">Settings</Link>
             <Link href={`/editor/${demo.id}/agent`} className="btn-secondary">AI Agent</Link>
           </div>

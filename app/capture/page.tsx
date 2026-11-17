@@ -1,6 +1,5 @@
 "use client";
 // Capture page — opens in a popup, captures clicks on the user's app
-"use client";
 import { useEffect, useState, useRef } from "react";
 
 interface Hotspot {
@@ -46,13 +45,15 @@ export default function CapturePage() {
     setHotspots((prev) => [...prev, hotspot]);
 
     // Capture the iframe's DOM as HTML for the snapshot
+    let html: string;
     try {
       const iframeDoc = iframeRef.current?.contentDocument;
-      const html = iframeDoc ? iframeDoc.documentElement.outerHTML : "<p>Could not capture</p>";
+      html = iframeDoc ? iframeDoc.documentElement.outerHTML : "<p>Could not capture</p>";
       setCapturedHtml(html);
     } catch (err) {
       // Cross-origin — can't read DOM, use placeholder
-      setCapturedHtml("<p>Cross-origin content (snapshot limited)</p>");
+      html = "<p>Cross-origin content (snapshot limited)</p>";
+      setCapturedHtml(html);
     }
 
     // Send step to parent window
@@ -60,7 +61,7 @@ export default function CapturePage() {
       order: stepNum,
       title: `Step ${stepNum + 1}`,
       description: "",
-      snapshot: capturedHtml || "<p>Step captured</p>",
+      snapshot: html,
       hotspots: JSON.stringify([...hotspots, hotspot]),
     };
     window.parent.postMessage({ type: "DEMO_STEP", demo: "1", step }, "*");

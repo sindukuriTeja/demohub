@@ -6,6 +6,10 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function generateShareToken() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  }
+  // Fallback for older environments
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 

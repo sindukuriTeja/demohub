@@ -42,6 +42,7 @@ export default function PublicPlayerPage() {
   const [demo, setDemo] = useState<Demo | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [viewId, setViewId] = useState("");
+  const [agentId, setAgentId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [showEmail, setShowEmail] = useState(false);
   const [email, setEmail] = useState("");
@@ -77,6 +78,7 @@ export default function PublicPlayerPage() {
       setDemo(data.demo);
       setSteps(data.steps);
       setViewId(data.viewId);
+      setAgentId(data.agentId || null);
       setLoading(false);
     } catch (e) {
       setError("Failed to load demo");
@@ -134,14 +136,16 @@ export default function PublicPlayerPage() {
 
   async function askAgent() {
     if (!agentInput.trim()) return;
+    if (!agentId) {
+      setAgentMessages((m) => [...m, { role: "assistant", content: "AI Agent is not enabled for this demo." }]);
+      return;
+    }
     const userMsg = agentInput;
     setAgentInput("");
     setAgentMessages((m) => [...m, { role: "user", content: userMsg }]);
     setAgentLoading(true);
     try {
-      const agent = steps[0]; // agent is attached to demo; we need agent id — simplified: use demo id
-      // We need the agent id; fetch it from demo settings. For MVP, we skip if not found.
-      const res = await fetch(`/api/agent/${demo!.id}/chat`, {
+      const res = await fetch(`/api/agent/${agentId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMsg, sessionId, history: agentMessages }),
