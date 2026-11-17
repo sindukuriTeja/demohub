@@ -41,10 +41,12 @@ cp .env.example .env
 ```
 
 Required:
-- `DATABASE_URL` — SQLite path (default `file:./dev.db`)
+- `DATABASE_URL` — SQLite path (default `file:./prisma/dev.db`)
 - `NEXTAUTH_SECRET` — generate with `openssl rand -base64 32`
 - `NEXTAUTH_URL` — `http://localhost:3000` for dev
 - `OPENAI_API_KEY` — for the AI Demo Agent (optional for MVP)
+
+> 💡 Prefer Docker? See the **[Docker](#docker)** section below for one-command setup with SQLite or Postgres.
 
 ### 3. Initialize the database
 
@@ -59,6 +61,58 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and sign up.
+
+## Docker
+
+DemoHub ships with a multi-stage Dockerfile and Docker Compose setup for easy local and production deployment.
+
+### Quick start (SQLite — single container)
+
+```bash
+# Copy env template and set a secret
+cp .env.example .env
+# Generate a strong secret: openssl rand -base64 32
+# Edit .env and set NEXTAUTH_SECRET
+
+# Build and run
+docker compose up --build
+```
+
+The app will be available at [http://localhost:3000](http://localhost:3000). The SQLite database is persisted in a named Docker volume (`demohub_data`), so your data survives container restarts. Prisma migrations run automatically on startup.
+
+### Production (Postgres)
+
+For production, run with Postgres instead of SQLite:
+
+```bash
+# Set DATABASE_URL to the Postgres connection string in .env
+# DATABASE_URL="postgresql://demohub:demohub_secret@demohub-db:5432/demohub?schema=public"
+
+docker compose --profile postgres up --build
+```
+
+This starts both the app and a Postgres 16 container (`demohub-db`), with data persisted in the `demohub_pgdata` volume.
+
+### Docker commands
+
+| Command | Description |
+|---------|-------------|
+| `docker compose up --build` | Build & start (SQLite mode) |
+| `docker compose --profile postgres up --build` | Build & start with Postgres |
+| `docker compose down` | Stop containers (keep volumes) |
+| `docker compose down -v` | Stop containers **and** delete volumes (wipes DB) |
+| `docker compose logs -f app` | Follow app logs |
+| `docker compose exec app sh` | Shell into the running container |
+| `docker build -t demohub .` | Build image only |
+| `docker run -p 3000:3000 --env-file .env demohub` | Run image directly |
+
+### Dockerfile notes
+
+- **Multi-stage build** (deps → builder → runner) keeps the final image small.
+- **Standalone output** (`output: "standalone"`) produces a minimal Node server.
+- Runs as a **non-root user** (`nextjs`) for security.
+- Entrypoint (`docker-entrypoint.sh`) runs `prisma generate` + `prisma migrate deploy` before starting Next.js.
+- Port `3000` is exposed. Set `NEXTAUTH_URL` to your public URL in production.
 
 ## How to Create a Demo
 
@@ -98,7 +152,7 @@ Open [http://localhost:3000](http://localhost:3000) and sign up.
 
 ## Production Notes
 
-- **Database:** Switch `DATABASE_URL` to a Postgres connection string and run `npx prisma migrate deploy`
+- **Database:** Switch `DATABASE_URL` to a Postgres connection string and run `npx prisma migrate deploy`. The easiest path is `docker compose --profile postgres up --build` which handles the DB + migrations automatically.
 - **Auth:** Add OAuth providers (Google, GitHub) in `lib/auth.ts`
 - **Storage:** For video/snapshots, add S3/Cloudflare R2 (currently snapshots are stored as HTML strings in SQLite — fine for MVP, use object storage for production)
 - **Billing:** Stripe integration scaffold is ready — add `STRIPE_*` keys and create checkout sessions

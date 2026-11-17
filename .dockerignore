@@ -1,0 +1,46 @@
+# Dependencies
+node_modules
+
+# Build output
+.next
+out
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode
+.idea
+
+# Database (SQLite dev files)
+*.db
+prisma/dev.db
+
+# Test / coverage
+coverage
+.nyc_output
+*.test.ts
+*.spec.ts
+
+# Docker (keep entrypoint script at root)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache
+.npm

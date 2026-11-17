@@ -1,0 +1,79 @@
+# DemoHub — Docker Compose
+#
+# Quick start (SQLite, single container):
+#   docker compose up --build
+#
+# Production (Postgres):
+#   docker compose --profile postgres up --build
+#
+# See README.md for details.
+
+services:
+  # ── DemoHub app ────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: demohub:latest
+    container_name: demohub
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # NextAuth
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      # OpenAI (optional)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Stripe (optional)
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    volumes:
+      # Persist SQLite DB file (default profile) across container restarts
+      - demohub_data:/app/prisma
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ── SQLite profile (default) ───────────────────────────────────────────────
+  # SQLite is baked into the container; this service is a placeholder so the
+  # default compose run works without external DB deps. The DB file is persisted
+  # via a named volume mounted inside the app container.
+  db:
+    image: alpine:3.20
+    profiles: ["sqlite"]
+    # Not used directly; kept for profile symmetry. See app volume below.
+    command: ["sh", "-c", "echo 'SQLite mode: DB lives in the demohub_data volume.'"]
+
+  # ── Postgres profile (production) ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    container_name: demohub-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-demohub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-demohub_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-demohub}
+    ports:
+      - "5432:5432"
+    volumes:
+      - demohub_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-demohub} -d ${POSTGRES_DB:-demohub}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  # Persist SQLite DB (default profile)
+  demohub_data:
+  # Persist Postgres data (postgres profile)
+  demohub_pgdata:
