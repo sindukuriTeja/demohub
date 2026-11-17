@@ -34,18 +34,39 @@ export async function POST(
 
   try {
     const body = stepSchema.parse(await req.json());
-    const step = await prisma.demoStep.create({
-      data: {
-        demoId: params.id,
-        order: body.order,
-        title: body.title,
-        description: body.description,
-        snapshot: body.snapshot,
-        hotspots: body.hotspots,
-        videoUrl: body.videoUrl,
-        duration: body.duration,
-      },
+
+    // Find existing step at this order position to avoid duplicates
+    const existing = await prisma.demoStep.findFirst({
+      where: { demoId: params.id, order: body.order },
     });
+
+    let step;
+    if (existing) {
+      step = await prisma.demoStep.update({
+        where: { id: existing.id },
+        data: {
+          title: body.title,
+          description: body.description,
+          snapshot: body.snapshot,
+          hotspots: body.hotspots,
+          videoUrl: body.videoUrl,
+          duration: body.duration,
+        },
+      });
+    } else {
+      step = await prisma.demoStep.create({
+        data: {
+          demoId: params.id,
+          order: body.order,
+          title: body.title,
+          description: body.description,
+          snapshot: body.snapshot,
+          hotspots: body.hotspots,
+          videoUrl: body.videoUrl,
+          duration: body.duration,
+        },
+      });
+    }
     return NextResponse.json(step);
   } catch (error: any) {
     if (error instanceof z.ZodError) {

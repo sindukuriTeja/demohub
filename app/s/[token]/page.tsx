@@ -48,6 +48,9 @@ export default function PublicPlayerPage() {
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
   const [showAgent, setShowAgent] = useState(false);
+  const [isPreview, setIsPreview] = useState(false);
+  const [demoId, setDemoId] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [agentMessages, setAgentMessages] = useState<{ role: string; content: string }[]>([]);
   const [agentInput, setAgentInput] = useState("");
   const [agentLoading, setAgentLoading] = useState(false);
@@ -79,6 +82,8 @@ export default function PublicPlayerPage() {
       setSteps(data.steps);
       setViewId(data.viewId);
       setAgentId(data.agentId || null);
+      setIsPreview(!!data.isPreview);
+      setDemoId(data.demo.id);
       setLoading(false);
     } catch (e) {
       setError("Failed to load demo");
@@ -222,6 +227,32 @@ export default function PublicPlayerPage() {
         </div>
       </div>
 
+      {/* Preview banner for unpublished demos */}
+      {isPreview && (
+        <div className="bg-amber-500 text-amber-950 px-6 py-2 flex items-center justify-between text-sm font-medium">
+          <span>⚠️ Preview mode — this demo is not published yet. Only you can see it.</span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                setPublishing(true);
+                await fetch(`/api/demos/${demoId}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ isPublished: true }),
+                });
+                setIsPreview(false);
+                setPublishing(false);
+              }}
+              disabled={publishing}
+              className="bg-amber-900 hover:bg-amber-800 text-white px-4 py-1 rounded text-xs font-semibold disabled:opacity-60"
+            >
+              {publishing ? "Publishing…" : "Publish Now"}
+            </button>
+            <a href={`/demo/${demoId}`} className="underline text-xs">Back to editor</a>
+          </div>
+        </div>
+      )}
+
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Demo area */}
@@ -229,30 +260,38 @@ export default function PublicPlayerPage() {
           {step?.videoUrl ? (
             <video src={step.videoUrl} controls className="w-full h-full object-contain bg-black" />
           ) : (
-            <div
-              className="w-full h-full relative bg-white"
-              dangerouslySetInnerHTML={{ __html: step?.snapshot || "<div class='p-8 text-slate-400'>Empty step</div>" }}
-            >
-              {/* Hotspots overlay */}
-              {hotspotList.map((hs) => (
-                <button
-                  key={hs.id}
-                  className="absolute rounded-full bg-brand-500/80 hover:bg-brand-500 border-2 border-white animate-pulse"
-                  style={{
-                    left: `${hs.x}%`,
-                    top: `${hs.y}%`,
-                    width: `${hs.width}%`,
-                    height: `${hs.height}%`,
-                    transform: "translate(-50%, -50%)",
-                  }}
-                  onClick={nextStep}
-                  title={hs.label}
-                >
-                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-                    {hs.label || "Next →"}
-                  </span>
-                </button>
-              ))}
+            /* Wrapper must be relative so absolute hotspots are positioned against it */
+            <div className="w-full h-full relative bg-white overflow-auto">
+              {/* Snapshot HTML — dangerouslySetInnerHTML cannot have React children,
+                  so hotspots are rendered as a sibling overlay div instead */}
+              <div
+                className="w-full h-full"
+                dangerouslySetInnerHTML={{
+                  __html: step?.snapshot || "<div class='p-8 text-slate-400'>Empty step</div>",
+                }}
+              />
+              {/* Hotspots overlay — absolutely positioned over the snapshot */}
+              <div className="absolute inset-0 pointer-events-none">
+                {hotspotList.map((hs) => (
+                  <button
+                    key={hs.id}
+                    className="absolute rounded-full bg-brand-500/80 hover:bg-brand-500 border-2 border-white animate-pulse pointer-events-auto"
+                    style={{
+                      left: `${hs.x}%`,
+                      top: `${hs.y}%`,
+                      width: `${hs.width}%`,
+                      height: `${hs.height}%`,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                    onClick={nextStep}
+                    title={hs.label}
+                  >
+                    <span className="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                      {hs.label || "Next →"}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

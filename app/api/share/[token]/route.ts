@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -10,20 +11,30 @@ const passwordSchema = z.object({
 
 // Shared handler for GET (no password) and POST (with password)
 async function handleShare(req: Request, params: { token: string }) {
+  // Check if the requesting user is the owner (for preview of unpublished demos)
+  const session = await auth();
+
   const demo = await prisma.demo.findFirst({
-    where: { shareToken: params.token, isPublished: true },
+    where: { shareToken: params.token },
     include: {
       steps: { orderBy: { order: "asc" } },
       agent: { select: { id: true, isActive: true } },
+      workspace: { select: { ownerId: true } },
     },
   });
 
   if (!demo) {
+    return NextResponse.json({ error: "Demo not found" }, { status: 404 });
+  }
+
+  // Allow owner to preview unpublished demos; block everyone else
+  const isOwner = session?.user?.id && demo.workspace.ownerId === session.user.id;
+  if (!demo.isPublished && !isOwner) {
     return NextResponse.json({ error: "Demo not found or not published" }, { status: 404 });
   }
 
-  // Password check (only relevant for POST with body)
-  if (demo.password) {
+  // Password check (skip for owner previewing their own demo)
+  if (demo.password && !isOwner) {
     const body = await req.json().catch(() => ({}));
     const parsed = passwordSchema.safeParse(body);
     const provided = parsed.success ? parsed.data.password : undefined;
@@ -32,7 +43,7 @@ async function handleShare(req: Request, params: { token: string }) {
     }
   }
 
-  // Record a view
+  // Record a view (only for public viewers, not owner previews)
   const ua = req.headers.get("user-agent") || "";
   const view = await prisma.demoView.create({
     data: {
@@ -49,10 +60,12 @@ async function handleShare(req: Request, params: { token: string }) {
       description: demo.description,
       type: demo.type,
       requireEmail: demo.requireEmail,
+      isPublished: demo.isPublished,
     },
     agentId: demo.agent?.isActive ? demo.agent.id : null,
     viewId: view.id,
     steps: demo.steps,
+    isPreview: !demo.isPublished && isOwner,
   });
 }
 

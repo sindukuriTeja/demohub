@@ -2,6 +2,8 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
+import CopyButton from "./CopyButton";
+import PublishButton from "./PublishButton";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +35,8 @@ export default async function DemoEditorPage({
               {demo.isPublished ? "Published" : "Draft"}
             </span>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
+            <PublishButton id={demo.id} isPublished={demo.isPublished} />
             <Link href={`/s/${demo.shareToken}`} target="_blank" className="btn-secondary">Preview</Link>
             <Link href={`/editor/${demo.id}/settings`} className="btn-secondary">Settings</Link>
             <Link href={`/editor/${demo.id}/agent`} className="btn-secondary">AI Agent</Link>
@@ -50,6 +53,20 @@ export default async function DemoEditorPage({
               <p className="text-slate-500">No steps yet. Edit via the recorder.</p>
             ) : (
               <div className="space-y-3">
+                {/* Video preview — show if any step has a videoUrl */}
+                {demo.steps.some(s => s.videoUrl) && (
+                  <div className="rounded-xl overflow-hidden border border-slate-200 bg-black mb-4">
+                    <div className="px-4 py-2 bg-slate-800 text-white text-sm font-medium flex items-center gap-2">
+                      🎬 Demo Video
+                      <span className="text-slate-400 text-xs font-normal">— recorded from your capture session</span>
+                    </div>
+                    <video
+                      src={demo.steps.find(s => s.videoUrl)!.videoUrl!}
+                      controls
+                      className="w-full max-h-80 bg-black"
+                    />
+                  </div>
+                )}
                 {demo.steps.map((step, i) => (
                   <Link key={step.id} href={`/editor/${demo.id}/step/${i}`} className="block border border-slate-200 rounded-lg p-4 hover:shadow-md transition">
                     <div className="flex items-center gap-3">
@@ -97,18 +114,18 @@ export default async function DemoEditorPage({
         <div>
           <div className="card">
             <h2 className="text-lg font-semibold mb-4">Share</h2>
+            {!demo.isPublished && (
+              <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                ⚠️ Demo is unpublished. Click <strong>Publish</strong> in the header to make it public.
+              </div>
+            )}
             <p className="text-sm text-slate-600 mb-2">Share this link with viewers:</p>
             <div className="flex gap-2">
               <input className="input flex-1 text-sm" value={shareUrl} readOnly />
-              <button
-                className="btn-secondary"
-                onClick={() => navigator.clipboard.writeText(shareUrl)}
-              >
-                Copy
-              </button>
+              <CopyButton text={shareUrl} />
             </div>
             <p className="text-xs text-slate-500 mt-3">
-              {demo.isPublished ? "Demo is live and viewable." : "Publish in Settings to make it viewable."}
+              {demo.isPublished ? "✅ Demo is live and viewable." : "Publish to make this link active."}
             </p>
           </div>
         </div>
