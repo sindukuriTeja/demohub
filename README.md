@@ -44,7 +44,10 @@ Required:
 - `DATABASE_URL` — SQLite path (default `file:./prisma/dev.db`)
 - `NEXTAUTH_SECRET` — generate with `openssl rand -base64 32`
 - `NEXTAUTH_URL` — `http://localhost:3000` for dev
-- `OPENAI_API_KEY` — for the AI Demo Agent (optional for MVP)
+
+Optional (for the AI Demo Agent):
+- `GROQ_API_KEY` — **free, no credit card** (recommended). Get one at https://console.groq.com/keys
+- `OPENAI_API_KEY` — alternative provider (paid, small free credit for new accounts)
 
 > 💡 Prefer Docker? See the **[Docker](#docker)** section below for one-command setup with SQLite or Postgres.
 
@@ -149,6 +152,36 @@ This starts both the app and a Postgres 16 container (`demohub-db`), with data p
 | GET/POST | `/api/leads` | List / capture leads |
 | GET | `/api/analytics` | Demo analytics |
 | POST | `/api/agent/[id]/chat` | Chat with AI agent |
+
+## AI Demo Agent Setup (Free — No Credit Card)
+
+The AI Demo Agent uses **Groq** by default — a free, fast, OpenAI-compatible provider that requires no credit card.
+
+### Option 1: Groq (Recommended — Free)
+
+1. Sign up at **[console.groq.com](https://console.groq.com)** (Google/GitHub login)
+2. Create an API key at **[console.groq.com/keys](https://console.groq.com/keys)**
+3. Add it to your `.env`:
+
+```bash
+GROQ_API_KEY="gsk_your_key_here"
+OPENAI_BASE_URL="https://api.groq.com/openai/v1"
+AI_MODEL="llama-3.3-70b-versatile"
+```
+
+That's it — the agent will use Groq's free tier (Llama 3.3 70B, ~320 tokens/sec). Free limits: ~30 req/min, ~14,400 req/day — plenty for development and small production use.
+
+### Option 2: OpenAI (Paid)
+
+If you prefer OpenAI, set `OPENAI_API_KEY` instead and the app will use it automatically:
+
+```bash
+OPENAI_API_KEY="sk-..."
+OPENAI_BASE_URL="https://api.openai.com/v1"
+AI_MODEL="gpt-4o-mini"
+```
+
+> Without any key, the agent returns a friendly fallback message instead of failing.
 
 ## Production Notes
 
