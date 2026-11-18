@@ -97,18 +97,22 @@ model Membership {
 // ─── Demos (Interactive Walkthroughs) ───────────────────────────
 
 model Demo {
-  id           String   @id @default(cuid())
-  workspaceId  String
-  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  title        String
-  description  String?
-  type         String   @default("interactive")
-  shareToken   String   @unique @default(uuid())
-  isPublished  Boolean  @default(false)
-  requireEmail Boolean  @default(false)
-  password     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  type           String   @default("interactive")
+  shareToken     String   @unique @default(uuid())
+  isPublished    Boolean  @default(false)
+  requireEmail   Boolean  @default(false)
+  password       String?
+  // Supademo-style recorder fields
+  status         String   @default("draft")   // draft | recording | ready
+  stepDurationSec Int     @default(3)
+  theme          String?  // JSON
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   steps     DemoStep[]
   views     DemoView[]
@@ -117,19 +121,49 @@ model Demo {
 }
 
 model DemoStep {
-  id          String  @id @default(cuid())
-  demoId      String
-  demo        Demo    @relation(fields: [demoId], references: [id], onDelete: Cascade)
-  order       Int
-  title       String?
-  description String?
-  snapshot    String?
-  hotspots    String
-  videoUrl    String?
-  duration    Int?
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  demoId       String
+  demo         Demo     @relation(fields: [demoId], references: [id], onDelete: Cascade)
+  order        Int
+  title        String?
+  description  String?
+  snapshot     String?
+  hotspots     String
+  videoUrl     String?
+  duration     Int?
+  // Supademo-style recorder / editor fields
+  type         String   @default("click")  // click | manual | chapter
+  pageUrl      String?
+  pageTitle    String?
+  clickX       Float?
+  clickY       Float?
+  elementJson  String?  // JSON
+  callout      String?  // JSON: {text,x,y,width,placement,fontFamily,fontSize,bold,italic,textColor,bgColor,showArrow,emoji}
+  hotspot      String?  // JSON: {x,y,w,h,shape}
+  blurs        String?  // JSON array of {x,y,w,h}
+  annotations  String?  // JSON array
+  crop         String?  // JSON: {x,y,w,h}
+  background   String?  // JSON
+  aiStatus     String   @default("pending")  // pending | done | failed
+  screenshotUrl String? // path to file
+  createdAt    DateTime @default(now())
 
   @@index([demoId, order])
+}
+
+// ─── Recorder Sessions (Playwright + WebSocket) ─────────────────
+
+model RecorderSession {
+  id          String   @id @default(cuid())
+  demoId      String   @unique
+  userId      String
+  status      String   @default("starting") // starting | recording | paused | stopping | closed
+  url         String
+  viewport    String   @default("1280x720")
+  stepCount   Int      @default(0)
+  token       String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // ─── Analytics ──────────────────────────────────────────────────

@@ -1,369 +1,182 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-
-interface CapturedStep {
-  order: number;
-  title: string;
-  description: string;
-  snapshot: string;      // HTML string (screenshot + annotation dots baked in)
-  hotspots: string;      // JSON
-  // extra for preview only — not sent to API
-  _screenshotDataUrl?: string;
-}
+import Link from "next/link";
 
 export default function CreateDemoPage() {
   const router = useRouter();
   const [demoTitle, setDemoTitle] = useState("");
   const [demoDescription, setDemoDescription] = useState("");
-  const [recording, setRecording] = useState(false);
-  const [steps, setSteps] = useState<CapturedStep[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [expandedStep, setExpandedStep] = useState<number | null>(null);
-  const popupRef = useRef<Window | null>(null);
-  const listenerRef = useRef<((e: MessageEvent) => void) | null>(null);
+  const [demoId, setDemoId] = useState<string | null>(null);
+  const [steps, setSteps] = useState<any[]>([]);
 
+  // Load draft demo if already created
   useEffect(() => {
-    return () => {
-      if (listenerRef.current) window.removeEventListener("message", listenerRef.current);
-    };
+    const draft = sessionStorage.getItem("demohub_draft");
+    if (draft) {
+      try {
+        const { id, title, description } = JSON.parse(draft);
+        setDemoId(id); setDemoTitle(title || ""); setDemoDescription(description || "");
+        fetch(`/api/demos/${id}`).then(r => r.json()).then(d => {
+          if (d.steps) setSteps(d.steps.sort((a: any, b: any) => a.order - b.order));
+        });
+      } catch {}
+    }
   }, []);
 
-  function startRecording() {
-    if (listenerRef.current) window.removeEventListener("message", listenerRef.current);
-
-    const captureUrl = `${window.location.origin}/capture?demo=1`;
-    const popup = window.open(
-      captureUrl,
-      "DemoHubCapture",
-      "width=1280,height=820,resizable=yes,scrollbars=yes"
-    );
-    if (!popup) {
-      alert("Please allow popups for this site to use the recorder");
-      return;
-    }
-    popupRef.current = popup;
-
-    const handler = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-
-      if (event.data?.type === "DEMO_STEP" && event.data?.demo === "1") {
-        const incoming = event.data.step as CapturedStep;
-        setSteps((prev) => {
-          const idx = prev.findIndex((s) => s.order === incoming.order);
-          if (idx !== -1) {
-            const copy = [...prev];
-            copy[idx] = incoming;
-            return copy;
-          }
-          return [...prev, incoming].sort((a, b) => a.order - b.order);
-        });
-      }
-
-      if (event.data?.type === "DEMO_DONE" && event.data?.demo === "1") {
-        setRecording(false);
-        window.removeEventListener("message", handler);
-        listenerRef.current = null;
-        try { popup.close(); } catch {}
-      }
-
-      // Capture page saved the demo directly — navigate to it
-      if (event.data?.type === "DEMO_SAVED" && event.data?.demo === "1") {
-        setRecording(false);
-        window.removeEventListener("message", handler);
-        listenerRef.current = null;
-        try { popup.close(); } catch {}
-        if (event.data.demoId) {
-          router.push(`/demo/${event.data.demoId}`);
-        }
-      }
-    };
-
-    window.addEventListener("message", handler);
-    listenerRef.current = handler;
-    setRecording(true);
-  }
-
-  function stopRecording() {
-    setRecording(false);
-    if (listenerRef.current) {
-      window.removeEventListener("message", listenerRef.current);
-      listenerRef.current = null;
-    }
-    try { popupRef.current?.close(); } catch {}
-  }
-
-  function updateStep(index: number, field: "title" | "description", value: string) {
-    setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)));
-  }
-
-  function deleteStep(index: number) {
-    setSteps((prev) =>
-      prev.filter((_, i) => i !== index).map((s, i) => ({ ...s, order: i }))
-    );
-    if (expandedStep === index) setExpandedStep(null);
-  }
-
-  function addManualStep() {
-    const n = steps.length + 1;
-    setSteps((prev) => [
-      ...prev,
-      {
-        order: prev.length,
-        title: `Step ${n}`,
-        description: "",
-        snapshot: `<div style="font-family:sans-serif;padding:40px;color:#94a3b8;background:#f8fafc;min-height:200px;display:flex;align-items:center;justify-content:center;">
-          <div style="text-align:center">
-            <div style="font-size:32px;margin-bottom:12px">📋</div>
-            <div style="font-size:16px;font-weight:600;color:#334155">Step ${n}</div>
-            <div style="font-size:13px;margin-top:4px">Manual step — edit title and description above</div>
-          </div>
-        </div>`,
-        hotspots: "[]",
-      },
-    ]);
-  }
-
-  async function saveDemo() {
-    if (!demoTitle.trim()) {
-      // Scroll to and focus the title input
-      const el = document.getElementById("demo-title-input");
-      if (el) { el.focus(); (el as HTMLInputElement).select(); }
-      setSaveError("Please enter a demo title in the field at the top");
-      return;
-    }
-    if (steps.length === 0) { alert("Add at least one step"); return; }
-
-    setSaving(true);
-    setSaveError("");
-    try {
-      const demoRes = await fetch("/api/demos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: demoTitle.trim(),
-          description: demoDescription.trim(),
-          type: "interactive",
-        }),
-      });
-      const demo = await demoRes.json();
-      if (!demoRes.ok) { setSaveError(demo.error || "Failed to create demo"); return; }
-
-      const payload = steps.map((s, i) => ({
-        order: i,
-        title: s.title,
-        description: s.description,
-        snapshot: s.snapshot,
-        hotspots: typeof s.hotspots === "string" ? s.hotspots : JSON.stringify(s.hotspots ?? []),
-      }));
-
-      const stepsRes = await fetch(`/api/demos/${demo.id}/steps`, {
+  async function ensureDemo(): Promise<string | null> {
+    if (demoId) {
+      // Update title/description if changed
+      await fetch(`/api/demos/${demoId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ steps: payload }),
+        body: JSON.stringify({ title: demoTitle.trim() || "Untitled Demo", description: demoDescription.trim() }),
       });
-      if (!stepsRes.ok) {
-        const err = await stepsRes.json().catch(() => ({}));
-        setSaveError(err.error || "Failed to save steps");
-        return;
-      }
-
-      router.push(`/demo/${demo.id}`);
-    } catch {
-      setSaveError("Network error — please try again");
-    } finally {
-      setSaving(false);
+      return demoId;
     }
+    setSaving(true);
+    const res = await fetch("/api/demos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: demoTitle.trim() || "Untitled Demo", description: demoDescription.trim(), type: "interactive" }),
+    });
+    const demo = await res.json();
+    if (!res.ok) { setSaveError(demo.error || "Failed"); setSaving(false); return null; }
+    setDemoId(demo.id);
+    sessionStorage.setItem("demohub_draft", JSON.stringify({ id: demo.id, title: demo.title, description: demo.description }));
+    setSaving(false);
+    return demo.id;
   }
 
-  // Extract screenshot data URL from the snapshot HTML for thumbnail
-  function getThumbSrc(snapshot: string): string | null {
-    const match = snapshot.match(/src="(data:image\/png;base64,[^"]+)"/);
-    return match ? match[1] : null;
+  async function startRecording() {
+    setSaveError("");
+    const id = await ensureDemo();
+    if (!id) return;
+    router.push(`/capture?demo=${id}`);
+  }
+
+  async function openEditor() {
+    if (!demoId) return;
+    router.push(`/editor/${demoId}`);
+  }
+
+  function getThumbSrc(step: any): string {
+    if (step.screenshotUrl) return step.screenshotUrl;
+    if (step.snapshot) { const m = step.snapshot.match(/src="([^"]+)"/); if (m) return m[1]; }
+    return "";
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-[#F4F5FB]" style={{ fontFamily: "Inter, sans-serif" }}>
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-5xl mx-auto px-6 py-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold flex-shrink-0">Create Demo</h1>
-            {/* Title input inline in header — always visible */}
-            <input
-              className="input flex-1 text-sm font-medium"
-              value={demoTitle}
-              onChange={(e) => setDemoTitle(e.target.value)}
-              placeholder="Demo title (required) — e.g. How to create an invoice"
-              id="demo-title-input"
-            />
-            <button className="btn-secondary flex-shrink-0" onClick={() => router.push("/dashboard")}>
+      <header className="bg-white border-b border-[#E5E7EB] sticky top-0 z-10">
+        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link href="/dashboard" className="text-slate-400 hover:text-slate-700">←</Link>
+            <h1 className="text-lg font-bold text-[#0F172A]">Create Demo</h1>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => { sessionStorage.removeItem("demohub_draft"); router.push("/dashboard"); }}
+              className="px-4 py-2 rounded-lg border border-[#E5E7EB] text-sm text-slate-600 hover:border-slate-400">
               Cancel
             </button>
-            <button
-              className="btn-primary flex-shrink-0"
-              onClick={saveDemo}
-              disabled={saving || steps.length === 0}
-            >
-              {saving
-                ? "Saving…"
-                : steps.length > 0
-                ? `Save Demo (${steps.length} step${steps.length !== 1 ? "s" : ""})`
-                : "Save Demo"}
-            </button>
+            {steps.length > 0 && (
+              <button onClick={openEditor}
+                className="px-4 py-2 rounded-lg bg-[#5B3DF5] hover:bg-[#4C2FE0] text-white text-sm font-semibold">
+                Open Editor →
+              </button>
+            )}
           </div>
-          {!demoTitle.trim() && steps.length > 0 && (
-            <p className="text-xs text-amber-600 mt-1 pl-1">⚠ Enter a title above to save</p>
-          )}
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-3xl mx-auto px-6 py-8 space-y-5">
         {saveError && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-            ⚠ {saveError}
-          </div>
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">⚠ {saveError}</div>
         )}
 
-        {/* Demo description (title is in the header) */}
-        <div className="card">
-          <h2 className="text-lg font-semibold mb-3">Description <span className="text-sm font-normal text-slate-400">(optional)</span></h2>
-          <textarea
-            className="input"
-            value={demoDescription}
-            onChange={(e) => setDemoDescription(e.target.value)}
-            rows={2}
-            placeholder="What is this demo about?"
-          />
+        {/* Demo details card */}
+        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 space-y-4">
+          <h2 className="font-semibold text-[#0F172A]">Demo Details</h2>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Title</label>
+            <input
+              className="w-full border border-[#E5E7EB] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#5B3DF5]"
+              value={demoTitle}
+              onChange={(e) => setDemoTitle(e.target.value)}
+              placeholder="e.g. How to sign up for FindJobs"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Description <span className="text-slate-400 font-normal">(optional)</span></label>
+            <textarea
+              className="w-full border border-[#E5E7EB] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#5B3DF5] resize-none"
+              rows={2}
+              value={demoDescription}
+              onChange={(e) => setDemoDescription(e.target.value)}
+              placeholder="What does this demo show?"
+            />
+          </div>
         </div>
 
-        {/* Recording controls */}
-        <div className="card">
-          <h2 className="text-lg font-semibold mb-2">Record Steps</h2>
-          <p className="text-sm text-slate-500 mb-4">
-            Click <strong>Start Recording</strong> to open the capture tool. Navigate your app,
-            take a screenshot for each step, click on the screenshot to annotate, then click
-            <strong> Save Step & Continue</strong>. When done, click <strong>Done ✓</strong> in the capture window.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            {!recording ? (
-              <button className="btn-primary" onClick={startRecording}>
-                🎬 Start Recording
-              </button>
-            ) : (
-              <>
-                <button
-                  className="px-4 py-2 rounded border border-red-300 text-red-600 bg-white hover:bg-red-50 text-sm font-medium"
-                  onClick={stopRecording}
-                >
-                  ⏹ Stop
-                </button>
-                <span className="self-center text-sm text-indigo-600 animate-pulse font-medium">
-                  ● Recording in popup…
-                </span>
-              </>
-            )}
-            <button className="btn-secondary" onClick={addManualStep}>
-              + Add Manual Step
+        {/* Record steps card */}
+        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 space-y-4">
+          <div>
+            <h2 className="font-semibold text-[#0F172A] mb-1">Record steps</h2>
+            <p className="text-sm text-slate-500">
+              Open your website in the DemoHub recorder. Every click you make becomes a step automatically, with a screenshot and an AI caption.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={startRecording} disabled={saving}
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#5B3DF5] hover:bg-[#4C2FE0] text-white rounded-xl text-sm font-semibold disabled:opacity-60 transition-colors">
+              🎬 Start recording
+            </button>
+            <button onClick={async () => { const id = await ensureDemo(); if (id) alert("Upload step coming soon — use Start recording and click 'Capture screen'"); }}
+              className="flex items-center gap-2 px-5 py-2.5 border border-[#E5E7EB] hover:border-slate-400 text-slate-600 rounded-xl text-sm font-medium transition-colors">
+              🖼 Add manual step
             </button>
           </div>
         </div>
 
-        {/* Steps */}
+        {/* Steps preview */}
         {steps.length > 0 && (
-          <div className="card">
+          <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Steps ({steps.length})</h2>
-            </div>
-            <div className="space-y-3">
-              {steps.map((step, i) => {
-                const thumb = getThumbSrc(step.snapshot);
-                const isExpanded = expandedStep === i;
-                return (
-                  <div key={i} className="border border-slate-200 rounded-xl overflow-hidden bg-white">
-                    {/* Step row */}
-                    <div className="flex items-center gap-3 p-4">
-                      {/* Thumbnail */}
-                      <div className="flex-shrink-0 w-24 h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center">
-                        {thumb ? (
-                          <img src={thumb} alt={`step ${i + 1}`} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-2xl">📋</span>
-                        )}
-                      </div>
-
-                      {/* Step number badge */}
-                      <span className="flex-shrink-0 text-xs font-mono bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-full">
-                        {i + 1}
-                      </span>
-
-                      {/* Title + description inline */}
-                      <div className="flex-1 min-w-0">
-                        <input
-                          className="input font-medium text-sm mb-1"
-                          value={step.title}
-                          onChange={(e) => updateStep(i, "title", e.target.value)}
-                          placeholder="Step title"
-                        />
-                        <input
-                          className="input text-sm text-slate-500"
-                          value={step.description}
-                          onChange={(e) => updateStep(i, "description", e.target.value)}
-                          placeholder="Description (optional)"
-                        />
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          className="text-xs text-slate-400 hover:text-slate-700 px-2 py-1 rounded border border-slate-200 hover:border-slate-400"
-                          onClick={() => setExpandedStep(isExpanded ? null : i)}
-                        >
-                          {isExpanded ? "▲ Hide" : "▼ Preview"}
-                        </button>
-                        <button
-                          className="text-red-400 hover:text-red-600 text-sm px-2"
-                          onClick={() => deleteStep(i)}
-                          title="Delete"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Expanded snapshot preview */}
-                    {isExpanded && (
-                      <div className="border-t border-slate-200 bg-slate-50 p-4">
-                        <p className="text-xs text-slate-400 mb-2 font-medium">SCREENSHOT PREVIEW</p>
-                        <div
-                          className="rounded-lg overflow-hidden border border-slate-200 bg-white"
-                          style={{ maxHeight: 400, overflow: "auto" }}
-                          dangerouslySetInnerHTML={{ __html: step.snapshot }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 pt-4 border-t border-slate-100">
-              {!demoTitle.trim() && (
-                <p className="text-sm text-amber-600 mb-3 text-center">
-                  ⚠ Enter a title in the bar at the top first
-                </p>
-              )}
-              <button
-                className="btn-primary w-full py-3"
-                onClick={saveDemo}
-                disabled={saving}
-              >
-                {saving
-                  ? "Saving…"
-                  : `Save Demo (${steps.length} step${steps.length !== 1 ? "s" : ""})`}
+              <h2 className="font-semibold text-[#0F172A]">{steps.length} step{steps.length !== 1 ? "s" : ""} recorded</h2>
+              <button onClick={openEditor}
+                className="text-sm text-[#5B3DF5] font-medium hover:underline">
+                Open editor →
               </button>
             </div>
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {steps.slice(0, 8).map((s, i) => (
+                <div key={s.id} className="flex-shrink-0 w-32">
+                  <div className="relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-50" style={{ aspectRatio: "16/10" }}>
+                    {getThumbSrc(s) ? (
+                      <img src={getThumbSrc(s)} alt="" className="w-full h-full object-cover object-top" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-300 text-xl">📋</div>
+                    )}
+                    <span className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-[#5B3DF5] text-white text-[10px] font-bold flex items-center justify-center">
+                      {i + 1}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 truncate">{s.title || "Step"}</p>
+                </div>
+              ))}
+              {steps.length > 8 && (
+                <div className="flex-shrink-0 w-32 flex items-center justify-center text-slate-400 text-sm">
+                  +{steps.length - 8} more
+                </div>
+              )}
+            </div>
+            <button onClick={openEditor}
+              className="mt-4 w-full py-3 bg-[#5B3DF5] hover:bg-[#4C2FE0] text-white rounded-xl text-sm font-semibold transition-colors">
+              Open in Editor →
+            </button>
           </div>
         )}
       </main>

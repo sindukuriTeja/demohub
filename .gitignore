@@ -7,3 +7,7 @@ out
 .DS_Store
 *.db
 prisma/dev.db
+prisma/prisma/dev.db
+
+# Recorder screenshots / uploads (generated at runtime)
+public/uploads
