@@ -122,6 +122,8 @@ export default function EditorPage() {
               screenshotUrl: s.screenshotUrl, type: s.type,
               pageUrl: s.pageUrl, pageTitle: s.pageTitle,
               clickX: s.clickX, clickY: s.clickY, aiStatus: s.aiStatus,
+              voiceScript: s.voiceScript, voiceAudioUrl: s.voiceAudioUrl, voiceStatus: s.voiceStatus,
+              avatarVideoUrl: s.avatarVideoUrl, avatarStatus: s.avatarStatus,
             })),
           }),
         });

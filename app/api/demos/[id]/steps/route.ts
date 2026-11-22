@@ -28,6 +28,14 @@ const stepSchema = z.object({
   background: z.string().optional(),
   aiStatus: z.string().optional(),
   screenshotUrl: z.string().optional(),
+  // Voice & avatar
+  voiceScript: z.string().optional().nullable(),
+  voiceAudioUrl: z.string().optional().nullable(),
+  voiceStatus: z.string().optional(),
+  avatarVideoUrl: z.string().optional().nullable(),
+  avatarStatus: z.string().optional(),
+  avatarImageUrl: z.string().optional().nullable(),
+  avatarTalkId: z.string().optional().nullable(),
 });
 
 // POST /api/demos/[id]/steps — add/update a step
@@ -80,6 +88,13 @@ export async function POST(
           background: body.background,
           aiStatus: body.aiStatus,
           screenshotUrl: body.screenshotUrl,
+          voiceScript: body.voiceScript,
+          voiceAudioUrl: body.voiceAudioUrl,
+          voiceStatus: body.voiceStatus,
+          avatarVideoUrl: body.avatarVideoUrl,
+          avatarStatus: body.avatarStatus,
+          avatarImageUrl: body.avatarImageUrl,
+          avatarTalkId: body.avatarTalkId,
         },
       });
     } else {
@@ -107,6 +122,13 @@ export async function POST(
           background: body.background,
           aiStatus: body.aiStatus,
           screenshotUrl: body.screenshotUrl,
+          voiceScript: body.voiceScript,
+          voiceAudioUrl: body.voiceAudioUrl,
+          voiceStatus: body.voiceStatus,
+          avatarVideoUrl: body.avatarVideoUrl,
+          avatarStatus: body.avatarStatus,
+          avatarImageUrl: body.avatarImageUrl,
+          avatarTalkId: body.avatarTalkId,
         },
       });
     }
@@ -155,7 +177,7 @@ export async function PUT(
         hotspots: typeof s.hotspots === "string" ? s.hotspots : JSON.stringify(s.hotspots || []),
         videoUrl: s.videoUrl,
         duration: s.duration,
-        // New Supademo-style recorder / editor fields
+        // Supademo recorder / editor fields
         type: s.type ?? "click",
         pageUrl: s.pageUrl,
         pageTitle: s.pageTitle,
@@ -170,6 +192,14 @@ export async function PUT(
         background: s.background,
         aiStatus: s.aiStatus ?? "pending",
         screenshotUrl: s.screenshotUrl,
+        // Voice / avatar fields — preserve when doing editor auto-save
+        voiceScript: s.voiceScript ?? null,
+        voiceAudioUrl: s.voiceAudioUrl ?? null,
+        voiceStatus: s.voiceStatus ?? "none",
+        avatarVideoUrl: s.avatarVideoUrl ?? null,
+        avatarStatus: s.avatarStatus ?? "none",
+        avatarImageUrl: s.avatarImageUrl ?? null,
+        avatarTalkId: s.avatarTalkId ?? null,
       })),
     });
 

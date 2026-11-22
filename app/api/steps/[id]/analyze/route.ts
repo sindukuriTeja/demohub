@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     where: { id: params.id },
     include: { demo: { include: { workspace: true } } },
   });
-  if (!step || step.demo.workspace.ownerId !== session.user.id) {
+  if (!step || step.demo.workspace.ownerId !== (session.user as any).id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -50,7 +50,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       });
 
       const text = msg.content[0].type === "text" ? msg.content[0].text : "";
-      const parsed = JSON.parse(text.match(/\{.*\}/s)?.[0] || "{}");
+      const parsed = JSON.parse((text.match(/\{[\s\S]*\}/) || ["{}"])[0]);
       caption = parsed.caption || "";
       title = parsed.title || "";
     } catch {}
