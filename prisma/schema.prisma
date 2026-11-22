@@ -111,6 +111,9 @@ model Demo {
   status         String   @default("draft")   // draft | recording | ready
   stepDurationSec Int     @default(3)
   theme          String?  // JSON
+  // Voice clone
+  clonedVoiceId   String?  // ElevenLabs voice ID for this demo
+  clonedVoiceName String?  // human-readable name
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -146,6 +149,10 @@ model DemoStep {
   background   String?  // JSON
   aiStatus     String   @default("pending")  // pending | done | failed
   screenshotUrl String? // path to file
+  // Voice / voiceover fields
+  voiceScript   String?  // text the voice should speak for this step
+  voiceAudioUrl String?  // URL to generated MP3 file
+  voiceStatus   String   @default("none")  // none | generating | done | failed
   createdAt    DateTime @default(now())
 
   @@index([demoId, order])

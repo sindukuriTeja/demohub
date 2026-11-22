@@ -22,12 +22,14 @@ interface Step {
   blurs: string | null; annotations: string | null;
   crop: string | null; background: string | null;
   aiStatus: string; hotspots: string;
+  voiceScript: string | null; voiceAudioUrl: string | null; voiceStatus: string;
 }
 
 interface Demo {
   id: string; title: string; description: string | null;
   status: string; stepDurationSec: number; shareToken: string;
   isPublished: boolean; steps: Step[];
+  clonedVoiceId: string | null; clonedVoiceName: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -248,7 +250,7 @@ export default function EditorPage() {
         <div className="flex-1" />
 
         {/* Tool buttons */}
-        {["Hotspot", "Blur & annotate", "Chapter", "Enhance with AI"].map(tool => (
+        {["Hotspot", "Blur & annotate", "Chapter", "Enhance with AI", "Voiceover"].map(tool => (
           <button key={tool}
             onClick={() => setActiveTool(activeTool === tool ? null : tool)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
@@ -419,6 +421,14 @@ export default function EditorPage() {
                 )}
                 {activeTool === "Enhance with AI" && (
                   <EnhancePanel step={step} demoId={demoId} onUpdate={updateStep} steps={steps} />
+                )}
+                {activeTool === "Voiceover" && (
+                  <VoiceoverPanel
+                    step={step}
+                    demo={demo}
+                    onUpdate={(patch) => { updateStep(patch); }}
+                    onDemoUpdate={(patch) => setDemo(d => d ? { ...d, ...patch } : d)}
+                  />
                 )}
               </div>
             ) : (
@@ -782,6 +792,234 @@ function EnhancePanel({ step, demoId, onUpdate, steps }: any) {
           {mode}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ─── VoiceoverPanel ──────────────────────────────────────────────────────────
+function VoiceoverPanel({ step, demo, onUpdate, onDemoUpdate }: any) {
+  const [script, setScript] = useState<string>(
+    step.voiceScript ?? (step.callout ? (() => { try { return JSON.parse(step.callout).text || ""; } catch { return ""; } })() : (step.title || ""))
+  );
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState("");
+  const [cloning, setCloning] = useState(false);
+  const [cloneError, setCloneError] = useState("");
+  const [voiceName, setVoiceName] = useState(demo.clonedVoiceName || "");
+  const [audioKey, setAudioKey] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Keep script in sync when step changes
+  useEffect(() => {
+    setScript(
+      step.voiceScript ??
+      (step.callout ? (() => { try { return JSON.parse(step.callout).text || ""; } catch { return ""; } })() : (step.title || ""))
+    );
+    setGenError("");
+  }, [step.id]);
+
+  async function generate() {
+    if (!script.trim()) { setGenError("Enter a script first"); return; }
+    setGenerating(true); setGenError("");
+    try {
+      const res = await fetch("/api/voice/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stepId: step.id,
+          text: script.trim(),
+          voiceId: demo.clonedVoiceId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setGenError(data.error || "Generation failed"); return; }
+      // Update local step state so player appears without reload
+      onUpdate({ voiceScript: script.trim(), voiceAudioUrl: data.audioUrl, voiceStatus: "done" });
+      setAudioKey(k => k + 1);
+    } catch (e: any) {
+      setGenError("Network error: " + e.message);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function cloneVoice(file: File) {
+    if (!voiceName.trim()) { setCloneError("Enter a name for the cloned voice"); return; }
+    setCloning(true); setCloneError("");
+    try {
+      const fd = new FormData();
+      fd.append("demoId", demo.id);
+      fd.append("voiceName", voiceName.trim());
+      fd.append("audioFile", file, file.name);
+      const res = await fetch("/api/voice/clone", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) { setCloneError(data.error || "Cloning failed"); return; }
+      onDemoUpdate({ clonedVoiceId: data.voiceId, clonedVoiceName: data.voiceName });
+    } catch (e: any) {
+      setCloneError("Network error: " + e.message);
+    } finally {
+      setCloning(false);
+    }
+  }
+
+  const audioUrl = step.voiceAudioUrl;
+  const hasClone = !!demo.clonedVoiceId;
+
+  return (
+    <div className="mt-3 bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-[#E5E7EB] flex items-center gap-2">
+        <span className="text-lg">🎙️</span>
+        <div>
+          <h4 className="font-semibold text-sm text-[#0F172A]">Voiceover</h4>
+          <p className="text-xs text-slate-400">Generate AI narration in a cloned voice for this step</p>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-5">
+
+        {/* ── STEP 1: Clone voice ── */}
+        <div className={`rounded-xl border p-4 space-y-3 ${hasClone ? "border-green-200 bg-green-50" : "border-[#E5E7EB]"}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${hasClone ? "bg-green-500" : "bg-[#5B3DF5]"}`}>
+                {hasClone ? "✓" : "1"}
+              </span>
+              <span className="text-sm font-semibold text-[#0F172A]">
+                {hasClone ? `Voice: "${demo.clonedVoiceName}"` : "Upload your voice sample"}
+              </span>
+            </div>
+            {hasClone && (
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="text-xs text-slate-400 hover:text-[#5B3DF5] underline"
+              >
+                Replace
+              </button>
+            )}
+          </div>
+
+          {!hasClone && (
+            <>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Record yourself speaking for <strong>at least 30 seconds</strong>, then upload. ElevenLabs will clone your voice and use it for all steps in this demo.
+              </p>
+
+              {/* Voice name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Voice name</label>
+                <input
+                  className="w-full text-sm border border-[#E5E7EB] rounded-lg px-3 py-2 focus:outline-none focus:border-[#5B3DF5]"
+                  value={voiceName}
+                  onChange={(e) => setVoiceName(e.target.value)}
+                  placeholder="e.g. John's Voice"
+                />
+              </div>
+
+              {/* Upload button */}
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={cloning}
+                className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-[#5B3DF5]/40 hover:border-[#5B3DF5] rounded-xl text-sm font-medium text-[#5B3DF5] hover:bg-[#5B3DF5]/5 transition-colors disabled:opacity-60"
+              >
+                {cloning
+                  ? <><span className="animate-spin">⏳</span> Cloning voice…</>
+                  : <><span>🎤</span> Upload voice sample (MP3 / WAV / M4A)</>}
+              </button>
+
+              {cloneError && (
+                <p className="text-xs text-red-500">⚠ {cloneError}</p>
+              )}
+            </>
+          )}
+
+          {hasClone && (
+            <p className="text-xs text-green-700">
+              ✓ Cloned voice ready. All generated audio for this demo will use it.
+            </p>
+          )}
+
+          {/* Hidden file input */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) cloneVoice(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+
+        {/* ── STEP 2: Script ── */}
+        <div className="rounded-xl border border-[#E5E7EB] p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-[#5B3DF5] flex items-center justify-center text-xs font-bold text-white">2</span>
+            <span className="text-sm font-semibold text-[#0F172A]">Script — what to say</span>
+          </div>
+
+          <textarea
+            className="w-full text-sm border border-[#E5E7EB] rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#5B3DF5] resize-none leading-relaxed"
+            rows={5}
+            value={script}
+            onChange={(e) => setScript(e.target.value)}
+            placeholder="Type what the voice should say for this step…&#10;&#10;Tip: it's pre-filled from the caption. Edit freely."
+          />
+
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400">{script.length} chars · ~{Math.max(1, Math.round(script.split(" ").length / 2))}s audio</span>
+            <button
+              onClick={() => {
+                try {
+                  const c = JSON.parse(step.callout || "{}");
+                  if (c.text) setScript(c.text);
+                } catch {}
+              }}
+              className="text-xs text-[#5B3DF5] hover:underline"
+            >
+              ↩ Restore from caption
+            </button>
+          </div>
+        </div>
+
+        {/* ── STEP 3: Generate ── */}
+        <div className="space-y-3">
+          <button
+            onClick={generate}
+            disabled={generating || !script.trim()}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-[#5B3DF5] hover:bg-[#4C2FE0] disabled:opacity-60 text-white rounded-xl text-sm font-semibold transition-colors"
+          >
+            {generating
+              ? <><span className="animate-spin inline-block">⏳</span> Generating audio…</>
+              : <><span>🔊</span> Generate voice audio</>}
+          </button>
+
+          {genError && <p className="text-xs text-red-500 text-center">⚠ {genError}</p>}
+
+          {!hasClone && !generating && (
+            <p className="text-xs text-slate-400 text-center">
+              No clone yet — will use ElevenLabs default voice. Upload a sample above to use your own.
+            </p>
+          )}
+        </div>
+
+        {/* ── Audio player ── */}
+        {audioUrl && (
+          <div className="rounded-xl border border-[#E5E7EB] bg-[#F4F5FB] p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#0F172A] flex items-center gap-1.5">
+                <span>🔊</span> Generated audio
+                <span className="text-green-500 font-medium">✓ Ready</span>
+              </span>
+              <a href={audioUrl} download className="text-xs text-[#5B3DF5] hover:underline">⬇ Download</a>
+            </div>
+            <audio key={audioKey} controls src={audioUrl} className="w-full h-9 rounded-lg" />
+            <p className="text-xs text-slate-400 italic truncate">"{script}"</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
