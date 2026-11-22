@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
@@ -10,7 +9,7 @@ export async function POST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const userId = session.user.id as string;
+    const userId = session.user.id;
 
     const formData = await req.formData();
     const stepId = formData.get("stepId") as string;
@@ -35,7 +34,11 @@ export async function POST(req: Request) {
     fs.writeFileSync(path.join(dir, filename), Buffer.from(await videoFile.arrayBuffer()));
     const videoUrl = `/avatars/${step.demoId}/${filename}`;
 
-    await prisma.demoStep.update({ where: { id: stepId }, data: { avatarVideoUrl: videoUrl, avatarStatus: "done" } });
+    await prisma.demoStep.update({
+      where: { id: stepId },
+      data: { avatarVideoUrl: videoUrl, avatarStatus: "done" },
+    });
+
     return NextResponse.json({ videoUrl });
   } catch (err: any) {
     console.error("avatar/save:", err);
