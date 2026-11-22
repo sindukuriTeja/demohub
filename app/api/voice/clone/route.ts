@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const userId = (session.user as any).id as string;
+    const userId = session.user.id as string;
 
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "ELEVENLABS_API_KEY not set" }, { status: 503 });

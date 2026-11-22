@@ -9,7 +9,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const userId = (session.user as any).id as string;
+    const userId = session.user.id;
 
     const step = await prisma.demoStep.findFirst({
       where: { id: params.id },
