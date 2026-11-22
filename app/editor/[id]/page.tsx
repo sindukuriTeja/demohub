@@ -23,6 +23,7 @@ interface Step {
   crop: string | null; background: string | null;
   aiStatus: string; hotspots: string;
   voiceScript: string | null; voiceAudioUrl: string | null; voiceStatus: string;
+  avatarImageUrl: string | null; avatarVideoUrl: string | null; avatarStatus: string; avatarTalkId: string | null;
 }
 
 interface Demo {
@@ -250,7 +251,7 @@ export default function EditorPage() {
         <div className="flex-1" />
 
         {/* Tool buttons */}
-        {["Hotspot", "Blur & annotate", "Chapter", "Enhance with AI", "Voiceover"].map(tool => (
+        {["Hotspot", "Blur & annotate", "Chapter", "Enhance with AI", "Voiceover", "Avatar"].map(tool => (
           <button key={tool}
             onClick={() => setActiveTool(activeTool === tool ? null : tool)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
@@ -354,7 +355,16 @@ export default function EditorPage() {
 
                   {/* Screenshot + overlays */}
                   <div className="relative bg-white" style={{ width: CANVAS_W, height: CANVAS_H }}>
-                    {imgSrc ? (
+                    {/* Show avatar video if generated, otherwise screenshot */}
+                    {step.avatarVideoUrl ? (
+                      <video
+                        src={step.avatarVideoUrl}
+                        controls
+                        autoPlay
+                        loop
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : imgSrc ? (
                       <img src={imgSrc} alt="step" className="absolute inset-0 w-full h-full object-cover object-top" />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center text-slate-300 text-4xl">📋</div>
@@ -428,6 +438,13 @@ export default function EditorPage() {
                     demo={demo}
                     onUpdate={(patch) => { updateStep(patch); }}
                     onDemoUpdate={(patch) => setDemo(d => d ? { ...d, ...patch } : d)}
+                  />
+                )}
+                {activeTool === "Avatar" && (
+                  <AvatarPanel
+                    step={step}
+                    demo={demo}
+                    onUpdate={(patch) => { updateStep(patch); }}
                   />
                 )}
               </div>
@@ -796,7 +813,295 @@ function EnhancePanel({ step, demoId, onUpdate, steps }: any) {
   );
 }
 
-// ─── VoiceoverPanel ──────────────────────────────────────────────────────────
+// ─── AvatarPanel ─────────────────────────────────────────────────────────────
+function AvatarPanel({ step, demo, onUpdate }: any) {
+  const [avatarImageUrl, setAvatarImageUrl] = useState<string>(step.avatarImageUrl || "");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState("");
+  const [polling, setPolling] = useState(false);
+  const [didKey, setDidKey] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check D-ID key on mount
+  useEffect(() => {
+    // We'll find out if the key is set when we try to generate
+    // Keep it simple — just show the UI
+    setDidKey(true);
+  }, []);
+
+  // Sync when step changes
+  useEffect(() => {
+    setAvatarImageUrl(step.avatarImageUrl || "");
+    setGenError("");
+    // If status is generating, start polling
+    if (step.avatarStatus === "generating") {
+      startPolling();
+    }
+  }, [step.id]);
+
+  // Clean up poll on unmount
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  function startPolling() {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setPolling(true);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/avatar/status?stepId=${step.id}`);
+        const data = await res.json();
+        if (data.status === "done") {
+          clearInterval(pollRef.current!);
+          setPolling(false);
+          onUpdate({ avatarVideoUrl: data.videoUrl, avatarStatus: "done" });
+        } else if (data.status === "failed") {
+          clearInterval(pollRef.current!);
+          setPolling(false);
+          setGenError(data.error || "Avatar generation failed");
+          onUpdate({ avatarStatus: "failed" });
+        }
+      } catch {}
+    }, 4000); // poll every 4 seconds
+  }
+
+  async function uploadAvatar(file: File) {
+    setUploading(true); setUploadError("");
+    try {
+      const fd = new FormData();
+      fd.append("demoId", demo.id);
+      fd.append("file", file, file.name);
+      const res = await fetch("/api/avatar/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) { setUploadError(data.error || "Upload failed"); return; }
+      setAvatarImageUrl(data.imageUrl);
+      onUpdate({ avatarImageUrl: data.imageUrl });
+    } catch (e: any) {
+      setUploadError("Upload failed: " + e.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function generateAvatar() {
+    if (!avatarImageUrl) { setGenError("Upload an avatar photo first"); return; }
+    if (!step.voiceScript && !step.title) { setGenError("Add a voiceover script or caption first"); return; }
+    setGenerating(true); setGenError("");
+    onUpdate({ avatarStatus: "generating" });
+    try {
+      const res = await fetch("/api/avatar/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stepId: step.id,
+          avatarImageUrl: avatarImageUrl.startsWith("http")
+            ? avatarImageUrl
+            : `${window.location.origin}${avatarImageUrl}`,
+          voiceAudioUrl: step.voiceAudioUrl
+            ? step.voiceAudioUrl.startsWith("http")
+              ? step.voiceAudioUrl
+              : `${window.location.origin}${step.voiceAudioUrl}`
+            : undefined,
+          text: step.voiceScript || step.title,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setGenError(data.error || "Generation failed");
+        onUpdate({ avatarStatus: "none" });
+        return;
+      }
+      onUpdate({ avatarTalkId: data.talkId, avatarStatus: "generating" });
+      startPolling();
+    } catch (e: any) {
+      setGenError("Request failed: " + e.message);
+      onUpdate({ avatarStatus: "none" });
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function resetAvatar() {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setPolling(false);
+    onUpdate({ avatarVideoUrl: null, avatarStatus: "none", avatarTalkId: null });
+  }
+
+  const isGenerating = generating || polling || step.avatarStatus === "generating";
+  const isDone = step.avatarStatus === "done" && step.avatarVideoUrl;
+  const hasVoice = !!(step.voiceAudioUrl || step.voiceScript);
+
+  return (
+    <div className="mt-3 bg-white rounded-2xl border border-[#E5E7EB] shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-[#E5E7EB] flex items-center gap-3">
+        <span className="text-2xl">🧑‍💼</span>
+        <div>
+          <h4 className="font-semibold text-sm text-[#0F172A]">AI Talking Avatar</h4>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Turn this step into a video of a talking presenter
+          </p>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-5">
+
+        {/* How it works banner */}
+        <div className="bg-[#5B3DF5]/5 border border-[#5B3DF5]/20 rounded-xl p-3 flex gap-3">
+          <span className="text-lg">ℹ️</span>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Upload a <strong>face photo</strong> → it becomes the presenter.
+            The avatar lip-syncs your <strong>voiceover</strong> (or caption text).
+            The result is a <strong>talking-head video</strong> that replaces the screenshot in the player.
+          </p>
+        </div>
+
+        {/* Step 1 — Avatar photo */}
+        <div className={`rounded-xl border p-4 space-y-3 ${avatarImageUrl ? "border-green-200 bg-green-50" : "border-[#E5E7EB]"}`}>
+          <div className="flex items-center gap-2">
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${avatarImageUrl ? "bg-green-500" : "bg-[#5B3DF5]"}`}>
+              {avatarImageUrl ? "✓" : "1"}
+            </span>
+            <span className="text-sm font-semibold text-[#0F172A]">Avatar photo</span>
+            {avatarImageUrl && (
+              <button onClick={() => fileRef.current?.click()} className="ml-auto text-xs text-slate-400 hover:text-[#5B3DF5] underline">
+                Change
+              </button>
+            )}
+          </div>
+
+          {avatarImageUrl ? (
+            <div className="flex items-center gap-3">
+              <img
+                src={avatarImageUrl.startsWith("http") ? avatarImageUrl : avatarImageUrl}
+                alt="avatar"
+                className="w-16 h-16 rounded-xl object-cover border-2 border-green-300"
+              />
+              <div>
+                <p className="text-xs font-medium text-green-700">✓ Photo uploaded</p>
+                <p className="text-xs text-slate-400 mt-0.5">This face will be animated</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-slate-500">
+                Upload a clear front-facing photo (JPEG/PNG/WebP, max 5 MB). One face only.
+              </p>
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-[#5B3DF5]/40 hover:border-[#5B3DF5] rounded-xl text-sm font-medium text-[#5B3DF5] hover:bg-[#5B3DF5]/5 transition-colors disabled:opacity-60"
+              >
+                {uploading ? <><span className="animate-spin">⏳</span> Uploading…</> : <>📸 Upload avatar photo</>}
+              </button>
+              {uploadError && <p className="text-xs text-red-500">⚠ {uploadError}</p>}
+            </>
+          )}
+
+          <input ref={fileRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAvatar(f); e.target.value = ""; }}
+          />
+        </div>
+
+        {/* Step 2 — Voice / script status */}
+        <div className={`rounded-xl border p-4 ${hasVoice ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+          <div className="flex items-center gap-2">
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${hasVoice ? "bg-green-500" : "bg-amber-500"}`}>
+              {hasVoice ? "✓" : "2"}
+            </span>
+            <span className="text-sm font-semibold text-[#0F172A]">Voice / script</span>
+          </div>
+          {hasVoice ? (
+            <div className="mt-2 space-y-1">
+              {step.voiceAudioUrl && <p className="text-xs text-green-700">✓ ElevenLabs voice audio ready — avatar will lip-sync this</p>}
+              {!step.voiceAudioUrl && step.voiceScript && <p className="text-xs text-green-700">✓ Script ready: "{step.voiceScript.slice(0, 60)}…"</p>}
+            </div>
+          ) : (
+            <p className="text-xs text-amber-700 mt-2">
+              ⚠ No voiceover yet. Use <strong>Voiceover</strong> tab to generate audio first, or the caption text will be used.
+              {step.title && <span className="block mt-1 text-slate-500">Will use caption: "{step.title}"</span>}
+            </p>
+          )}
+        </div>
+
+        {/* Step 3 — Generate */}
+        <div className="space-y-3">
+          {!isDone && (
+            <button
+              onClick={generateAvatar}
+              disabled={!avatarImageUrl || isGenerating}
+              className="w-full flex items-center justify-center gap-2 py-3.5 bg-[#5B3DF5] hover:bg-[#4C2FE0] disabled:opacity-60 text-white rounded-xl text-sm font-semibold transition-colors"
+            >
+              {isGenerating ? (
+                <><span className="animate-spin inline-block">⏳</span> Generating avatar video… (takes ~30s)</>
+              ) : (
+                <><span>🎬</span> Generate talking avatar video</>
+              )}
+            </button>
+          )}
+
+          {isGenerating && (
+            <div className="bg-[#F4F5FB] rounded-xl p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-[#5B3DF5] animate-pulse" />
+                <p className="text-xs text-slate-600 font-medium">Rendering avatar video…</p>
+              </div>
+              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                <div className="h-full bg-[#5B3DF5] rounded-full animate-pulse" style={{ width: "60%" }} />
+              </div>
+              <p className="text-xs text-slate-400">D-ID is processing — usually takes 20–60 seconds</p>
+            </div>
+          )}
+
+          {genError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <p className="text-xs text-red-600">⚠ {genError}</p>
+              {genError.includes("DID_API_KEY") && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Add <code className="bg-slate-100 px-1 rounded">DID_API_KEY=your_key</code> to <code>.env</code>.
+                  Get a free key at <a href="https://www.d-id.com" target="_blank" className="text-[#5B3DF5] underline">d-id.com</a>
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Result — video player */}
+        {isDone && step.avatarVideoUrl && (
+          <div className="rounded-xl border border-green-200 bg-green-50 overflow-hidden">
+            <div className="px-4 py-3 border-b border-green-200 flex items-center justify-between">
+              <span className="text-sm font-semibold text-green-800 flex items-center gap-2">
+                🎉 Avatar video ready!
+              </span>
+              <div className="flex gap-2">
+                <a href={step.avatarVideoUrl} download
+                  className="text-xs text-[#5B3DF5] hover:underline font-medium">⬇ Download</a>
+                <button onClick={resetAvatar} className="text-xs text-slate-400 hover:text-red-500 ml-2">
+                  Regenerate
+                </button>
+              </div>
+            </div>
+            <video
+              src={step.avatarVideoUrl}
+              controls autoPlay loop
+              className="w-full bg-black"
+              style={{ maxHeight: 240 }}
+            />
+            <p className="text-xs text-slate-400 p-3">
+              This video now shows in the step canvas above and in the player/preview.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── VoiceoverPanel ───────────────────────────────────────────────────────────
 function VoiceoverPanel({ step, demo, onUpdate, onDemoUpdate }: any) {
   const [script, setScript] = useState<string>(
     step.voiceScript ?? (step.callout ? (() => { try { return JSON.parse(step.callout).text || ""; } catch { return ""; } })() : (step.title || ""))

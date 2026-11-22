@@ -153,6 +153,11 @@ model DemoStep {
   voiceScript   String?  // text the voice should speak for this step
   voiceAudioUrl String?  // URL to generated MP3 file
   voiceStatus   String   @default("none")  // none | generating | done | failed
+  // AI Avatar video fields
+  avatarImageUrl  String?  // URL of the avatar face image uploaded by user
+  avatarVideoUrl  String?  // URL of the final D-ID talking-head video
+  avatarStatus    String   @default("none")  // none | generating | done | failed
+  avatarTalkId    String?  // D-ID talk job ID for polling
   createdAt    DateTime @default(now())
 
   @@index([demoId, order])
