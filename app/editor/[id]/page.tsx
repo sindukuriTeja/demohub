@@ -1,5 +1,4 @@
 "use client";
-"use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -125,6 +124,7 @@ export default function EditorPage() {
               clickX: s.clickX, clickY: s.clickY, aiStatus: s.aiStatus,
               voiceScript: s.voiceScript, voiceAudioUrl: s.voiceAudioUrl, voiceStatus: s.voiceStatus,
               avatarVideoUrl: s.avatarVideoUrl, avatarStatus: s.avatarStatus,
+              avatarImageUrl: s.avatarImageUrl, avatarTalkId: s.avatarTalkId,
             })),
           }),
         });
@@ -211,8 +211,14 @@ export default function EditorPage() {
   if (!demo) return <div className="p-8 text-red-600">Demo not found.</div>;
 
   const imgSrc = step ? getImgSrc(step) : "";
-  const callout: Callout | null = parseJson(step?.callout, null);
-  const hotspot: Hotspot | null = parseJson(step?.hotspot ?? step?.hotspots, null);
+  const callout: Callout | null = (() => {
+    const parsed = parseJson<Callout | null>(step?.callout, null);
+    return parsed && typeof parsed === "object" && "text" in parsed ? (parsed as Callout) : null;
+  })();
+  const hotspot: Hotspot | null = (() => {
+    const parsed = parseJson<Hotspot | null>(step?.hotspot ?? step?.hotspots, null);
+    return parsed && typeof parsed === "object" && "x" in parsed ? (parsed as Hotspot) : null;
+  })();
   const blurs: BlurRect[] = parseJson(step?.blurs, []);
   const shareUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/d/${demo.shareToken}`;
 
@@ -401,7 +407,7 @@ export default function EditorPage() {
                         canvasW={CANVAS_W} canvasH={CANVAS_H}
                         editing={editingCallout}
                         onEdit={() => { setEditingCallout(true); setCalloutText(callout.text); }}
-                        onTextChange={(t) => {
+                        onTextChange={(t: string) => {
                           const updated = { ...callout, text: t };
                           updateStep({ callout: JSON.stringify(updated) });
                         }}
@@ -439,8 +445,8 @@ export default function EditorPage() {
                   <VoiceoverPanel
                     step={step}
                     demo={demo}
-                    onUpdate={(patch) => { updateStep(patch); }}
-                    onDemoUpdate={(patch) => setDemo(d => d ? { ...d, ...patch } : d)}
+                    onUpdate={(patch: Partial<Step>) => { updateStep(patch); }}
+                    onDemoUpdate={(patch: Partial<Demo>) => setDemo(d => d ? { ...d, ...patch } : d)}
                   />
                 )}
                 {activeTool === "Avatar" && (
@@ -449,7 +455,7 @@ export default function EditorPage() {
                     demo={demo}
                     steps={steps}
                     demoId={demoId}
-                    onUpdate={(patch) => { updateStep(patch); }}
+                    onUpdate={(patch: Partial<Step>) => { updateStep(patch); }}
                   />
                 )}
               </div>
@@ -605,7 +611,7 @@ export default function EditorPage() {
           demo={demo}
           demoId={demoId}
           onClose={() => setShareOpen(false)}
-          onPublishToggle={(pub) => setDemo(d => d ? { ...d, isPublished: pub } : d)}
+          onPublishToggle={(pub: boolean) => setDemo(d => d ? { ...d, isPublished: pub } : d)}
         />
       )}
     </div>
@@ -723,7 +729,10 @@ function CalloutOverlay({ callout, canvasW, canvasH, editing, onEdit, onTextChan
 }
 
 function HotspotPanel({ step, onUpdate }: any) {
-  const hs = parseJson(step.hotspot ?? step.hotspots, null);
+  const hs: Hotspot | null = (() => {
+    const parsed = parseJson<Hotspot | null>(step.hotspot ?? step.hotspots, null);
+    return parsed && typeof parsed === "object" && "x" in parsed ? (parsed as Hotspot) : null;
+  })();
   return (
     <div className="mt-3 bg-white rounded-xl border border-[#E5E7EB] p-4 space-y-3">
       <h4 className="font-semibold text-sm">Hotspot</h4>
@@ -906,7 +915,7 @@ function AvatarPanel({ step, demo, onUpdate, steps, demoId }: any) {
       const AW = 220, AH = 220;
       const AX = W - AW - 20, AY = H - AH - 20;
 
-      function drawFrame(t: number) {
+      const drawFrame = (t: number) => {
         // 1. Dark bg
         ctx.fillStyle = "#0f172a"; ctx.fillRect(0, 0, W, H);
 
